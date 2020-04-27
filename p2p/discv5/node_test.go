@@ -37,6 +37,9 @@ func init() {
 		if name == "node.example.org" {
 			return []net.IP{{33, 44, 55, 66}}, nil
 		}
+		if name == "hostname" {
+			return nil, nil
+		}
 		return nil, errors.New("no such host")
 	}
 }
@@ -78,7 +81,7 @@ var parseNodeTests = []struct {
 	// Complete nodes with IP address.
 	{
 		rawurl:    "enode://1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439@hostname:3",
-		wantError: `no such host`,
+		wantError: `invalid IP address`,
 	},
 	{
 		rawurl:    "enode://1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439@127.0.0.1:foo",
@@ -107,6 +110,10 @@ var parseNodeTests = []struct {
 		),
 	},
 	{
+		rawurl:    "enode://1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439@unknownhost:3",
+		wantError: `no such host`,
+	},
+	{
 		rawurl: "enode://1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439@[2001:db8:3c4d:15::abcd:ef12]:52150",
 		wantResult: NewNode(
 			MustHexID("0x1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439"),
@@ -124,14 +131,6 @@ var parseNodeTests = []struct {
 			52150,
 		),
 	},
-	// Incomplete nodes with no address.
-	{
-		rawurl: "1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439",
-		wantResult: NewNode(
-			MustHexID("0x1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439"),
-			nil, 0, 0,
-		),
-	},
 	{
 		rawurl: "enode://1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439@node.example.org:52150?discport=22334",
 		wantResult: NewNode(
@@ -139,6 +138,14 @@ var parseNodeTests = []struct {
 			net.IP{0x21, 0x2C, 0x37, 0x42},
 			22334,
 			52150,
+		),
+	},
+	// Incomplete nodes with no address.
+	{
+		rawurl: "1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439",
+		wantResult: NewNode(
+			MustHexID("0x1dd9d65c4552b5eb43d5ad55a2ee3f56c6cbc1c64a5c8d659f51fcd51bace24351232b8d7821617d2b29b54b81cdefb9b3e9c37d7fd5f63270bcc9e1a6f6a439"),
+			nil, 0, 0,
 		),
 	},
 	// Invalid URLs
@@ -191,17 +198,19 @@ func TestParseNode(t *testing.T) {
 
 func TestNodeString(t *testing.T) {
 	for i, test := range parseNodeTests {
-		if test.wantError == "" && strings.HasPrefix(test.rawurl, "enode://") {
+		if test.wantError == "" {
+			// Sanitize test.rawUrl
+			rawURL := test.rawurl
+			if !strings.HasPrefix(test.rawurl, "enode://") {
+				rawURL = "enode://" + rawURL
+			}
+			if strings.Contains(test.rawurl, "node.example.org") {
+				rawURL = strings.Replace(test.rawurl, "node.example.org", "33.44.55.66", 1)
+			}
+			// Test stringer
 			str := test.wantResult.String()
-			if str != test.rawurl {
-				if strings.Contains(test.rawurl, "node.example.org") {
-					resolvedurl := strings.Replace(test.rawurl, "node.example.org", "33.44.55.66", 1)
-					if str != resolvedurl {
-						t.Errorf("test %d: Node.String() mismatch:\ngot:  %s\nwant: %s", i, str, resolvedurl)
-					}
-				} else {
-					t.Errorf("test %d: Node.String() mismatch:\ngot:  %s\nwant: %s", i, str, test.rawurl)
-				}
+			if str != rawURL {
+				t.Errorf("test %d: Node.String() mismatch:\ngot:  %s\nwant: %s", i, str, test.rawurl)
 			}
 		}
 	}
